@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Voice AI Assistant</title>
+<style>
+  body { font-family: -apple-system, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; background: #0d1117; color: #e6edf3; }
+  h1 { text-align: center; }
+  #status { text-align: center; padding: 10px; border-radius: 8px; background: #161b22; margin: 20px 0; }
+  #mic-btn { display: block; margin: 20px auto; width: 80px; height: 80px; border-radius: 50%; border: none; font-size: 2em; cursor: pointer; background: #238636; color: white; }
+  #mic-btn.recording { background: #da3633; animation: pulse 1s infinite; }
+  #transcript, #response { padding: 12px; border-radius: 8px; background: #161b22; margin: 10px 0; min-height: 40px; }
+  @keyframes pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.1); } }
+</style>
+</head>
+<body>
+<h1>🎙️ Voice AI Assistant</h1>
+<div id="status">Click the mic to start talking</div>
+<button id="mic-btn">🎤</button>
+<div id="transcript"><em>Transcript will appear here...</em></div>
+<div id="response"><em>AI response will appear here...</em></div>
+<script>
+const sessionId = Math.random().toString(36).slice(2);
+const ws = new WebSocket(`ws://localhost:8004/ws/${sessionId}`);
+let mediaRecorder, chunks = [];
+
+ws.onmessage = async (e) => {
+  if (typeof e.data === 'string') {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'transcript') document.getElementById('transcript').textContent = '🗣️ ' + msg.text;
+    if (msg.type === 'response') document.getElementById('response').textContent = '🤖 ' + msg.text;
+    if (msg.type === 'transcribing') document.getElementById('status').textContent = 'Transcribing...';
+    if (msg.type === 'done') document.getElementById('status').textContent = 'Click to talk again';
+  } else {
+    const blob = new Blob([e.data], {type: 'audio/mp3'});
+    const url = URL.createObjectURL(blob);
+    new Audio(url).play();
+  }
+};
+
+document.getElementById('mic-btn').onclick = async () => {
+  const btn = document.getElementById('mic-btn');
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    mediaRecorder.stop();
+    btn.classList.remove('recording');
+    document.getElementById('status').textContent = 'Processing...';
+    return;
+  }
+  const stream = await navigator.mediaDevices.getUserMedia({audio: true});
+  mediaRecorder = new MediaRecorder(stream);
+  chunks = [];
+  mediaRecorder.ondataavailable = e => chunks.push(e.data);
+  mediaRecorder.onstop = () => {
+    const blob = new Blob(chunks, {type: 'audio/wav'});
+    blob.arrayBuffer().then(buf => ws.send(buf));
+    stream.getTracks().forEach(t => t.stop());
+  };
+  mediaRecorder.start();
+  btn.classList.add('recording');
+  document.getElementById('status').textContent = 'Recording... (click to stop)';
+};
+</script>
+</body>
+</html>
